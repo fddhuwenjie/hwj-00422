@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Pause, Stop, Plus, Check, Clock, Timer, Save, Dumbbell } from 'lucide-react';
+import { Play, Pause, Square, Plus, Check, Clock, Timer, Save, Dumbbell } from 'lucide-react';
 import { planApi, exerciseApi, recordApi } from '../services/api';
 
 const daysOfWeek = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
