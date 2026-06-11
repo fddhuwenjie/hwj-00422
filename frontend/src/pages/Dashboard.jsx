@@ -1,16 +1,28 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Clock, Weight, Calendar, Award, Target } from 'lucide-react';
+import { BarChart3, Clock, Weight, Calendar, Award, Target, Activity, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { analysisApi } from '../services/api';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement);
 
+const muscleGroupPositions = {
+  '胸': { front: { top: '20%', left: '50%' }, back: null },
+  '背': { front: null, back: { top: '20%', left: '50%' } },
+  '肩': { front: { top: '15%', left: '50%' }, back: null },
+  '臂': { front: { top: '35%', left: '30%' }, back: { top: '35%', left: '70%' } },
+  '腿': { front: { top: '70%', left: '50%' }, back: null },
+  '核心': { front: { top: '50%', left: '50%' }, back: null }
+};
+
 export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null);
   const [muscleDistribution, setMuscleDistribution] = useState(null);
   const [personalRecords, setPersonalRecords] = useState([]);
   const [calendarData, setCalendarData] = useState({});
+  const [fatigueIndex, setFatigueIndex] = useState(null);
+  const [trainingRecommendation, setTrainingRecommendation] = useState(null);
+  const [showBackView, setShowBackView] = useState(false);
 
   useEffect(() => {
     analysisApi.dashboard().then(data => {
@@ -19,6 +31,8 @@ export default function Dashboard() {
     });
     analysisApi.muscleGroupDistribution().then(setMuscleDistribution);
     analysisApi.personalRecords().then(data => setPersonalRecords(data.slice(0, 5)));
+    analysisApi.fatigueIndex().then(setFatigueIndex);
+    analysisApi.trainingRecommendation().then(setTrainingRecommendation);
   }, []);
 
   const formatDuration = (minutes) => {
@@ -45,6 +59,20 @@ export default function Dashboard() {
     if (count === 1) return 'bg-green-200';
     if (count === 2) return 'bg-green-400';
     return 'bg-green-600';
+  };
+
+  const getFatigueColor = (index) => {
+    if (index < 30) return 'bg-green-500';
+    if (index < 50) return 'bg-yellow-500';
+    if (index < 70) return 'bg-orange-500';
+    return 'bg-red-500';
+  };
+
+  const getFatigueBgColor = (index) => {
+    if (index < 30) return 'bg-green-100';
+    if (index < 50) return 'bg-yellow-100';
+    if (index < 70) return 'bg-orange-100';
+    return 'bg-red-100';
   };
 
   const muscleChartData = muscleDistribution ? {
@@ -106,6 +134,117 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {trainingRecommendation && (
+        <div className="bg-white rounded-xl p-6 shadow-md">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-blue-600" />
+            今日训练建议
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-green-50 rounded-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <span className="font-medium text-green-800">推荐训练肌群</span>
+              </div>
+              {trainingRecommendation.recommendedGroups.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {trainingRecommendation.recommendedGroups.map(group => (
+                    <span key={group} className="px-3 py-1 bg-green-200 text-green-700 rounded-full text-sm">
+                      {group}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-green-600 text-sm">暂无推荐，所有肌群疲劳适中</p>
+              )}
+            </div>
+            <div className="p-4 bg-red-50 rounded-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <span className="font-medium text-red-800">建议休息肌群</span>
+              </div>
+              {trainingRecommendation.restGroups.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {trainingRecommendation.restGroups.map(group => (
+                    <span key={group} className="px-3 py-1 bg-red-200 text-red-700 rounded-full text-sm">
+                      {group}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-red-600 text-sm">暂无需要休息的肌群</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl p-6 shadow-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">肌群疲劳热力图</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowBackView(false)}
+              className={`px-3 py-1 rounded-lg text-sm transition ${!showBackView ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              正面
+            </button>
+            <button
+              onClick={() => setShowBackView(true)}
+              className={`px-3 py-1 rounded-lg text-sm transition ${showBackView ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              背面
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-center">
+          <div className="relative w-64 h-96 bg-gray-100 rounded-full">
+            <div className="absolute inset-4 border-4 border-gray-300 rounded-full"></div>
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-32 h-20 bg-gray-200 rounded-t-full"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-28 h-32 bg-gray-200 rounded-lg"></div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-32 h-24 bg-gray-200 rounded-b-full"></div>
+            
+            {fatigueIndex && Object.entries(fatigueIndex).map(([group, index]) => {
+              const pos = muscleGroupPositions[group];
+              const position = showBackView ? pos.back : pos.front;
+              if (!position) return null;
+              return (
+                <div
+                  key={group}
+                  className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                  style={{ top: position.top, left: position.left }}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-full ${getFatigueColor(index)} opacity-80`}
+                    title={`${group}: ${index}%`}
+                  />
+                  <span className="text-xs text-gray-600 mt-1">{group}</span>
+                  <span className="text-xs text-gray-500">{index}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-6 mt-4">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-green-500"></div>
+            <span className="text-sm text-gray-600">低疲劳 (&lt;30%)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-yellow-500"></div>
+            <span className="text-sm text-gray-600">中低疲劳</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+            <span className="text-sm text-gray-600">中高疲劳</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-red-500"></div>
+            <span className="text-sm text-gray-600">高疲劳 (&gt;70%)</span>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl p-6 shadow-md">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">肌群训练分布</h3>
@@ -136,6 +275,34 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {fatigueIndex && (
+        <div className="bg-white rounded-xl p-6 shadow-md">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">肌群疲劳指数详情</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {Object.entries(fatigueIndex).map(([group, index]) => (
+              <div key={group} className={`p-4 rounded-lg ${getFatigueBgColor(index)}`}>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-800">{group}</div>
+                  <div className={`text-3xl font-bold mt-2 ${
+                    index < 30 ? 'text-green-600' :
+                    index < 50 ? 'text-yellow-600' :
+                    index < 70 ? 'text-orange-600' : 'text-red-600'
+                  }`}>
+                    {index}%
+                  </div>
+                  <div className="w-full bg-gray-300 rounded-full h-2 mt-2">
+                    <div
+                      className={`h-2 rounded-full ${getFatigueColor(index)}`}
+                      style={{ width: `${index}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl p-6 shadow-md">
         <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">

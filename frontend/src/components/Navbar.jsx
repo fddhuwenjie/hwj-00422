@@ -1,4 +1,4 @@
-import { Dumbbell, Calendar, BarChart3, TrendingUp, Share2, BookOpen } from 'lucide-react';
+import { Dumbbell, Calendar, BarChart3, TrendingUp, Share2, BookOpen, Users, Trophy } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: BarChart3 },
@@ -6,6 +6,8 @@ const navItems = [
   { path: '/plans', label: '训练计划', icon: Calendar },
   { path: '/training', label: '训练记录', icon: BookOpen },
   { path: '/progress', label: '进步追踪', icon: TrendingUp },
+  { path: '/friends', label: '训练伙伴', icon: Users },
+  { path: '/challenges', label: '周挑战', icon: Trophy },
   { path: '/share', label: '社交分享', icon: Share2 },
 ];
 

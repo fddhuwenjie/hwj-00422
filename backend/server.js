@@ -14,11 +14,16 @@ let exercises = [...exercisesData];
 let plans = [];
 let records = [];
 let bodyMetrics = [];
+let users = [{ _id: 1, name: '默认用户', inviteCode: '123456' }];
+let friends = [];
+let challenges = [];
 
 let exerciseIdCounter = exercisesData.length + 1;
 let planIdCounter = 1;
 let recordIdCounter = 1;
 let metricsIdCounter = 1;
+let userIdCounter = 2;
+let challengeIdCounter = 1;
 
 function generateTrainingRecord(date, muscleGroup) {
   const exerciseNamesByMuscle = {
@@ -97,6 +102,10 @@ for (let i = 29; i >= 0; i -= 7) {
     arms: Math.round((30 + Math.random() * 5) * 10) / 10,
     legs: Math.round((50 + Math.random() * 10) * 10) / 10
   });
+}
+
+function generateInviteCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 app.get('/api/exercises', (req, res) => {
@@ -203,9 +212,21 @@ app.get('/api/records/:id', (req, res) => {
 app.post('/api/records', (req, res) => {
   let totalVolume = 0;
   req.body.exercises.forEach(exercise => {
-    exercise.sets.forEach(set => {
-      totalVolume += set.weight * set.reps;
-    });
+    if (exercise.type === 'superset') {
+      exercise.exercises.forEach(subEx => {
+        subEx.sets.forEach(set => {
+          totalVolume += set.weight * set.reps;
+        });
+      });
+    } else if (exercise.type === 'dropSet') {
+      exercise.sets.forEach(set => {
+        totalVolume += set.weight * set.reps;
+      });
+    } else {
+      exercise.sets.forEach(set => {
+        totalVolume += set.weight * set.reps;
+      });
+    }
   });
   
   const record = {
@@ -225,9 +246,21 @@ app.put('/api/records/:id', (req, res) => {
   
   let totalVolume = 0;
   req.body.exercises.forEach(exercise => {
-    exercise.sets.forEach(set => {
-      totalVolume += set.weight * set.reps;
-    });
+    if (exercise.type === 'superset') {
+      exercise.exercises.forEach(subEx => {
+        subEx.sets.forEach(set => {
+          totalVolume += set.weight * set.reps;
+        });
+      });
+    } else if (exercise.type === 'dropSet') {
+      exercise.sets.forEach(set => {
+        totalVolume += set.weight * set.reps;
+      });
+    } else {
+      exercise.sets.forEach(set => {
+        totalVolume += set.weight * set.reps;
+      });
+    }
   });
   
   records[index] = { ...records[index], ...req.body, totalVolume };
@@ -329,20 +362,54 @@ app.get('/api/analysis/personal-records', (req, res) => {
   const prs = {};
   records.forEach(record => {
     record.exercises.forEach(exercise => {
-      const exerciseName = exercise.exerciseName;
-      exercise.sets.forEach(set => {
-        const estimate = set.weight * (1 + set.reps / 30);
-        if (!prs[exerciseName] || estimate > prs[exerciseName].estimate) {
-          prs[exerciseName] = {
-            exerciseName,
-            weight: set.weight,
-            reps: set.reps,
-            oneRepMax: Math.round(estimate),
-            date: record.date,
-            muscleGroup: exercises.find(e => e.name === exerciseName)?.muscleGroup || 'Unknown'
-          };
-        }
-      });
+      if (exercise.type === 'superset') {
+        exercise.exercises.forEach(subEx => {
+          const exerciseName = subEx.exerciseName;
+          subEx.sets.forEach(set => {
+            const estimate = set.weight * (1 + set.reps / 30);
+            if (!prs[exerciseName] || estimate > prs[exerciseName].estimate) {
+              prs[exerciseName] = {
+                exerciseName,
+                weight: set.weight,
+                reps: set.reps,
+                oneRepMax: Math.round(estimate),
+                date: record.date,
+                muscleGroup: exercises.find(e => e.name === exerciseName)?.muscleGroup || 'Unknown'
+              };
+            }
+          });
+        });
+      } else if (exercise.type === 'dropSet') {
+        const exerciseName = exercise.exerciseName;
+        exercise.sets.forEach(set => {
+          const estimate = set.weight * (1 + set.reps / 30);
+          if (!prs[exerciseName] || estimate > prs[exerciseName].estimate) {
+            prs[exerciseName] = {
+              exerciseName,
+              weight: set.weight,
+              reps: set.reps,
+              oneRepMax: Math.round(estimate),
+              date: record.date,
+              muscleGroup: exercises.find(e => e.name === exerciseName)?.muscleGroup || 'Unknown'
+            };
+          }
+        });
+      } else {
+        const exerciseName = exercise.exerciseName;
+        exercise.sets.forEach(set => {
+          const estimate = set.weight * (1 + set.reps / 30);
+          if (!prs[exerciseName] || estimate > prs[exerciseName].estimate) {
+            prs[exerciseName] = {
+              exerciseName,
+              weight: set.weight,
+              reps: set.reps,
+              oneRepMax: Math.round(estimate),
+              date: record.date,
+              muscleGroup: exercises.find(e => e.name === exerciseName)?.muscleGroup || 'Unknown'
+            };
+          }
+        });
+      }
     });
   });
 
@@ -363,13 +430,335 @@ app.get('/api/analysis/muscle-group-distribution', (req, res) => {
   const distribution = {};
   weeklyRecords.forEach(record => {
     record.exercises.forEach(exercise => {
-      const muscleGroup = exercises.find(e => e.name === exercise.exerciseName)?.muscleGroup || 'Unknown';
-      const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
-      distribution[muscleGroup] = (distribution[muscleGroup] || 0) + volume;
+      if (exercise.type === 'superset') {
+        exercise.exercises.forEach(subEx => {
+          const muscleGroup = exercises.find(e => e.name === subEx.exerciseName)?.muscleGroup || 'Unknown';
+          const volume = subEx.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+          distribution[muscleGroup] = (distribution[muscleGroup] || 0) + volume;
+        });
+      } else if (exercise.type === 'dropSet') {
+        const muscleGroup = exercises.find(e => e.name === exercise.exerciseName)?.muscleGroup || 'Unknown';
+        const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+        distribution[muscleGroup] = (distribution[muscleGroup] || 0) + volume;
+      } else {
+        const muscleGroup = exercises.find(e => e.name === exercise.exerciseName)?.muscleGroup || 'Unknown';
+        const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+        distribution[muscleGroup] = (distribution[muscleGroup] || 0) + volume;
+      }
     });
   });
 
   res.json(distribution);
+});
+
+app.get('/api/friends/invite-code', (req, res) => {
+  const user = users[0];
+  res.json({ inviteCode: user.inviteCode });
+});
+
+app.post('/api/friends/add', (req, res) => {
+  const { inviteCode } = req.body;
+  const friendUser = users.find(u => u.inviteCode === inviteCode);
+  
+  if (!friendUser) {
+    return res.status(404).json({ error: '邀请码无效' });
+  }
+  
+  const existingFriend = friends.find(f => 
+    (f.userId === 1 && f.friendId === friendUser._id) ||
+    (f.userId === friendUser._id && f.friendId === 1)
+  );
+  
+  if (existingFriend) {
+    return res.status(400).json({ error: '已经是好友' });
+  }
+  
+  friends.push({ userId: 1, friendId: friendUser._id });
+  friends.push({ userId: friendUser._id, friendId: 1 });
+  
+  res.json({ message: '添加成功', friend: friendUser });
+});
+
+app.get('/api/friends/list', (req, res) => {
+  const userFriends = friends.filter(f => f.userId === 1);
+  const friendIds = userFriends.map(f => f.friendId);
+  const friendUsers = users.filter(u => friendIds.includes(u._id));
+  
+  const friendsWithStatus = friendUsers.map(friend => {
+    const friendRecords = records.filter(r => {
+      const date = new Date(r.date);
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      return date >= sevenDaysAgo;
+    });
+    
+    const recentRecord = friendRecords.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    
+    return {
+      ...friend,
+      recentTrainingDate: recentRecord?.date || null,
+      weeklyTrainings: friendRecords.length
+    };
+  });
+  
+  res.json(friendsWithStatus);
+});
+
+app.post('/api/challenges/create', (req, res) => {
+  const { name, targetVolume, muscleGroup } = req.body;
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + 1);
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 7);
+  
+  const challenge = {
+    _id: challengeIdCounter++,
+    name,
+    targetVolume,
+    muscleGroup,
+    startDate,
+    endDate,
+    participants: [{ userId: 1, progress: 0, dailyProgress: {} }],
+    createdAt: new Date()
+  };
+  
+  challenges.push(challenge);
+  res.status(201).json(challenge);
+});
+
+app.post('/api/challenges/:id/join', (req, res) => {
+  const challengeId = parseInt(req.params.id);
+  const challenge = challenges.find(c => c._id === challengeId);
+  
+  if (!challenge) {
+    return res.status(404).json({ error: '挑战不存在' });
+  }
+  
+  const alreadyJoined = challenge.participants.some(p => p.userId === 1);
+  if (alreadyJoined) {
+    return res.status(400).json({ error: '已加入此挑战' });
+  }
+  
+  challenge.participants.push({ userId: 1, progress: 0, dailyProgress: {} });
+  res.json({ message: '加入成功', challenge });
+});
+
+app.get('/api/challenges', (req, res) => {
+  const userChallenges = challenges.filter(c => c.participants.some(p => p.userId === 1));
+  res.json(userChallenges);
+});
+
+app.get('/api/challenges/:id', (req, res) => {
+  const challengeId = parseInt(req.params.id);
+  const challenge = challenges.find(c => c._id === challengeId);
+  
+  if (!challenge) {
+    return res.status(404).json({ error: '挑战不存在' });
+  }
+  
+  const now = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  challenge.participants.forEach(participant => {
+    const participantRecords = records.filter(r => {
+      const date = new Date(r.date);
+      return date >= sevenDaysAgo && date <= now;
+    });
+    
+    let totalProgress = 0;
+    const dailyProgress = {};
+    
+    participantRecords.forEach(record => {
+      record.exercises.forEach(exercise => {
+        if (exercise.type === 'superset') {
+          exercise.exercises.forEach(subEx => {
+            const ex = exercises.find(e => e.name === subEx.exerciseName);
+            if (ex && ex.muscleGroup === challenge.muscleGroup) {
+              const volume = subEx.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+              totalProgress += volume;
+              const dateStr = new Date(record.date).toISOString().split('T')[0];
+              dailyProgress[dateStr] = (dailyProgress[dateStr] || 0) + volume;
+            }
+          });
+        } else if (exercise.type === 'dropSet') {
+          const ex = exercises.find(e => e.name === exercise.exerciseName);
+          if (ex && ex.muscleGroup === challenge.muscleGroup) {
+            const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+            totalProgress += volume;
+            const dateStr = new Date(record.date).toISOString().split('T')[0];
+            dailyProgress[dateStr] = (dailyProgress[dateStr] || 0) + volume;
+          }
+        } else {
+          const ex = exercises.find(e => e.name === exercise.exerciseName);
+          if (ex && ex.muscleGroup === challenge.muscleGroup) {
+            const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+            totalProgress += volume;
+            const dateStr = new Date(record.date).toISOString().split('T')[0];
+            dailyProgress[dateStr] = (dailyProgress[dateStr] || 0) + volume;
+          }
+        }
+      });
+    });
+    
+    participant.progress = totalProgress;
+    participant.dailyProgress = dailyProgress;
+  });
+  
+  challenge.participants.sort((a, b) => b.progress - a.progress);
+  
+  res.json(challenge);
+});
+
+app.get('/api/analysis/fatigue-index', (req, res) => {
+  const now = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  const muscleGroups = ['胸', '背', '肩', '臂', '腿', '核心'];
+  const fatigueIndex = {};
+  
+  muscleGroups.forEach(group => {
+    let totalVolume = 0;
+    let trainingDays = 0;
+    const trainingDates = [];
+    
+    records.forEach(record => {
+      const date = new Date(record.date);
+      if (date >= sevenDaysAgo) {
+        record.exercises.forEach(exercise => {
+          if (exercise.type === 'superset') {
+            exercise.exercises.forEach(subEx => {
+              const ex = exercises.find(e => e.name === subEx.exerciseName);
+              if (ex && ex.muscleGroup === group) {
+                const volume = subEx.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+                totalVolume += volume;
+                if (!trainingDates.includes(date.toDateString())) {
+                  trainingDates.push(date.toDateString());
+                  trainingDays++;
+                }
+              }
+            });
+          } else if (exercise.type === 'dropSet') {
+            const ex = exercises.find(e => e.name === exercise.exerciseName);
+            if (ex && ex.muscleGroup === group) {
+              const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+              totalVolume += volume;
+              if (!trainingDates.includes(date.toDateString())) {
+                trainingDates.push(date.toDateString());
+                trainingDays++;
+              }
+            }
+          } else {
+            const ex = exercises.find(e => e.name === exercise.exerciseName);
+            if (ex && ex.muscleGroup === group) {
+              const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+              totalVolume += volume;
+              if (!trainingDates.includes(date.toDateString())) {
+                trainingDates.push(date.toDateString());
+                trainingDays++;
+              }
+            }
+          }
+        });
+      }
+    });
+    
+    const baseFatigue = Math.min((totalVolume / 1000) * 10, 30);
+    const frequencyFactor = Math.min(trainingDays * 15, 45);
+    
+    let recencyFactor = 0;
+    if (trainingDates.length > 0) {
+      const lastTrainingDate = new Date(trainingDates[trainingDates.length - 1]);
+      const daysSinceLastTraining = Math.floor((now - lastTrainingDate) / (1000 * 60 * 60 * 24));
+      if (daysSinceLastTraining === 0) recencyFactor = 30;
+      else if (daysSinceLastTraining === 1) recencyFactor = 20;
+      else if (daysSinceLastTraining === 2) recencyFactor = 10;
+    }
+    
+    fatigueIndex[group] = Math.min(Math.round(baseFatigue + frequencyFactor + recencyFactor), 100);
+  });
+  
+  res.json(fatigueIndex);
+});
+
+app.get('/api/analysis/training-recommendation', (req, res) => {
+  const fatigueIndex = {};
+  const now = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  const muscleGroups = ['胸', '背', '肩', '臂', '腿', '核心'];
+  
+  muscleGroups.forEach(group => {
+    let totalVolume = 0;
+    let trainingDays = 0;
+    const trainingDates = [];
+    
+    records.forEach(record => {
+      const date = new Date(record.date);
+      if (date >= sevenDaysAgo) {
+        record.exercises.forEach(exercise => {
+          if (exercise.type === 'superset') {
+            exercise.exercises.forEach(subEx => {
+              const ex = exercises.find(e => e.name === subEx.exerciseName);
+              if (ex && ex.muscleGroup === group) {
+                const volume = subEx.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+                totalVolume += volume;
+                if (!trainingDates.includes(date.toDateString())) {
+                  trainingDates.push(date.toDateString());
+                  trainingDays++;
+                }
+              }
+            });
+          } else if (exercise.type === 'dropSet') {
+            const ex = exercises.find(e => e.name === exercise.exerciseName);
+            if (ex && ex.muscleGroup === group) {
+              const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+              totalVolume += volume;
+              if (!trainingDates.includes(date.toDateString())) {
+                trainingDates.push(date.toDateString());
+                trainingDays++;
+              }
+            }
+          } else {
+            const ex = exercises.find(e => e.name === exercise.exerciseName);
+            if (ex && ex.muscleGroup === group) {
+              const volume = exercise.sets.reduce((sum, set) => sum + set.weight * set.reps, 0);
+              totalVolume += volume;
+              if (!trainingDates.includes(date.toDateString())) {
+                trainingDates.push(date.toDateString());
+                trainingDays++;
+              }
+            }
+          }
+        });
+      }
+    });
+    
+    const baseFatigue = Math.min((totalVolume / 1000) * 10, 30);
+    const frequencyFactor = Math.min(trainingDays * 15, 45);
+    
+    let recencyFactor = 0;
+    if (trainingDates.length > 0) {
+      const lastTrainingDate = new Date(trainingDates[trainingDates.length - 1]);
+      const daysSinceLastTraining = Math.floor((now - lastTrainingDate) / (1000 * 60 * 60 * 24));
+      if (daysSinceLastTraining === 0) recencyFactor = 30;
+      else if (daysSinceLastTraining === 1) recencyFactor = 20;
+      else if (daysSinceLastTraining === 2) recencyFactor = 10;
+    }
+    
+    fatigueIndex[group] = Math.min(Math.round(baseFatigue + frequencyFactor + recencyFactor), 100);
+  });
+  
+  const recommendedGroups = muscleGroups.filter(g => fatigueIndex[g] < 30);
+  const restGroups = muscleGroups.filter(g => fatigueIndex[g] > 70);
+  
+  res.json({
+    fatigueIndex,
+    recommendedGroups,
+    restGroups
+  });
 });
 
 app.listen(PORT, () => {

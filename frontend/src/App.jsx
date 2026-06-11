@@ -6,6 +6,8 @@ import Plans from './pages/Plans';
 import Training from './pages/Training';
 import Progress from './pages/Progress';
 import Share from './pages/Share';
+import Friends from './pages/Friends';
+import Challenges from './pages/Challenges';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('/');
@@ -24,6 +26,10 @@ export default function App() {
         return <Progress />;
       case '/share':
         return <Share />;
+      case '/friends':
+        return <Friends />;
+      case '/challenges':
+        return <Challenges />;
       default:
         return <Dashboard />;
     }

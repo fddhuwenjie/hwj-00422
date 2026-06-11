@@ -66,5 +66,31 @@ export const analysisApi = {
     body: JSON.stringify(data)
   }).then(res => res.json()),
   personalRecords: () => fetch(`${API_BASE}/analysis/personal-records`).then(res => res.json()),
-  muscleGroupDistribution: () => fetch(`${API_BASE}/analysis/muscle-group-distribution`).then(res => res.json())
+  muscleGroupDistribution: () => fetch(`${API_BASE}/analysis/muscle-group-distribution`).then(res => res.json()),
+  fatigueIndex: () => fetch(`${API_BASE}/analysis/fatigue-index`).then(res => res.json()),
+  trainingRecommendation: () => fetch(`${API_BASE}/analysis/training-recommendation`).then(res => res.json())
+};
+
+export const friendApi = {
+  getInviteCode: () => fetch(`${API_BASE}/friends/invite-code`).then(res => res.json()),
+  addFriend: (inviteCode) => fetch(`${API_BASE}/friends/add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inviteCode })
+  }).then(res => res.json()),
+  getFriends: () => fetch(`${API_BASE}/friends/list`).then(res => res.json())
+};
+
+export const challengeApi = {
+  create: (data) => fetch(`${API_BASE}/challenges/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(res => res.json()),
+  join: (id) => fetch(`${API_BASE}/challenges/${id}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }).then(res => res.json()),
+  getAll: () => fetch(`${API_BASE}/challenges`).then(res => res.json()),
+  getById: (id) => fetch(`${API_BASE}/challenges/${id}`).then(res => res.json())
 };

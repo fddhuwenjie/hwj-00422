@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Pause, Square, Plus, Check, Clock, Timer, Save, Dumbbell } from 'lucide-react';
+import { Play, Pause, Square, Plus, Check, Clock, Timer, Save, Dumbbell, Zap, TrendingDown, Users } from 'lucide-react';
 import { planApi, exerciseApi, recordApi } from '../services/api';
 
 const daysOfWeek = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -13,12 +13,14 @@ export default function Training() {
   const [trainingExercises, setTrainingExercises] = useState([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [currentSubIndex, setCurrentSubIndex] = useState(0);
   const [restTimer, setRestTimer] = useState(60);
   const [isResting, setIsResting] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [totalDuration, setTotalDuration] = useState(0);
   const [restDuration, setRestDuration] = useState(60);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [trainingMode, setTrainingMode] = useState('normal');
   
   const timerRef = useRef(null);
   const trainingTimerRef = useRef(null);
@@ -72,38 +74,84 @@ export default function Training() {
     setMode('training');
     setCurrentExerciseIndex(0);
     setCurrentSetIndex(0);
+    setCurrentSubIndex(0);
     setTotalDuration(0);
   };
 
   const completeSet = (weight, reps) => {
-    setTrainingExercises(prev => prev.map((ex, exIndex) => {
-      if (exIndex === currentExerciseIndex) {
-        return {
-          ...ex,
-          sets: ex.sets.map((set, setIndex) => {
-            if (setIndex === currentSetIndex) {
-              return { ...set, weight, reps, completed: true };
-            }
-            return set;
-          })
-        };
-      }
-      return ex;
-    }));
-
     const currentExercise = trainingExercises[currentExerciseIndex];
-    if (currentSetIndex < currentExercise.targetSets - 1) {
-      setCurrentSetIndex(prev => prev + 1);
-    } else if (currentExerciseIndex < trainingExercises.length - 1) {
-      setIsResting(true);
-      setRestTimer(restDuration);
-      setTimeout(() => {
-        setCurrentExerciseIndex(prev => prev + 1);
+    
+    if (currentExercise.type === 'superset') {
+      setTrainingExercises(prev => prev.map((ex, exIndex) => {
+        if (exIndex === currentExerciseIndex) {
+          return {
+            ...ex,
+            exercises: ex.exercises.map((subEx, subIndex) => {
+              if (subIndex === currentSubIndex) {
+                return {
+                  ...subEx,
+                  sets: subEx.sets.map((set, setIndex) => {
+                    if (setIndex === currentSetIndex) {
+                      return { ...set, weight, reps, completed: true };
+                    }
+                    return set;
+                  })
+                };
+              }
+              return subEx;
+            })
+          };
+        }
+        return ex;
+      }));
+      
+      const subEx = currentExercise.exercises[currentSubIndex];
+      if (currentSetIndex < subEx.sets.length - 1) {
+        setCurrentSetIndex(prev => prev + 1);
+      } else if (currentSubIndex < currentExercise.exercises.length - 1) {
+        setCurrentSubIndex(prev => prev + 1);
         setCurrentSetIndex(0);
-      }, restDuration * 1000);
+      } else if (currentExerciseIndex < trainingExercises.length - 1) {
+        setIsResting(true);
+        setRestTimer(restDuration);
+        setTimeout(() => {
+          setCurrentExerciseIndex(prev => prev + 1);
+          setCurrentSetIndex(0);
+          setCurrentSubIndex(0);
+        }, restDuration * 1000);
+      } else {
+        setIsTraining(false);
+        setMode('complete');
+      }
     } else {
-      setIsTraining(false);
-      setMode('complete');
+      setTrainingExercises(prev => prev.map((ex, exIndex) => {
+        if (exIndex === currentExerciseIndex) {
+          return {
+            ...ex,
+            sets: ex.sets.map((set, setIndex) => {
+              if (setIndex === currentSetIndex) {
+                return { ...set, weight, reps, completed: true };
+              }
+              return set;
+            })
+          };
+        }
+        return ex;
+      }));
+
+      if (currentSetIndex < currentExercise.sets.length - 1) {
+        setCurrentSetIndex(prev => prev + 1);
+      } else if (currentExerciseIndex < trainingExercises.length - 1) {
+        setIsResting(true);
+        setRestTimer(restDuration);
+        setTimeout(() => {
+          setCurrentExerciseIndex(prev => prev + 1);
+          setCurrentSetIndex(0);
+        }, restDuration * 1000);
+      } else {
+        setIsTraining(false);
+        setMode('complete');
+      }
     }
   };
 
@@ -116,11 +164,36 @@ export default function Training() {
     const recordData = {
       date: new Date(),
       planId: selectedPlan?._id,
-      exercises: trainingExercises.map(ex => ({
-        exerciseId: ex.exerciseId,
-        exerciseName: ex.exerciseName,
-        sets: ex.sets.filter(s => s.completed).map(s => ({ weight: s.weight, reps: s.reps }))
-      })).filter(ex => ex.sets.length > 0),
+      exercises: trainingExercises.map(ex => {
+        if (ex.type === 'superset') {
+          return {
+            type: 'superset',
+            exercises: ex.exercises.map(subEx => ({
+              exerciseId: subEx.exerciseId,
+              exerciseName: subEx.exerciseName,
+              sets: subEx.sets.filter(s => s.completed).map(s => ({ weight: s.weight, reps: s.reps }))
+            })).filter(subEx => subEx.sets.length > 0)
+          };
+        } else if (ex.type === 'dropSet') {
+          return {
+            type: 'dropSet',
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.exerciseName,
+            startingWeight: ex.startingWeight,
+            dropPercentage: ex.dropPercentage,
+            sets: ex.sets.filter(s => s.completed).map(s => ({ weight: s.weight, reps: s.reps }))
+          };
+        } else {
+          return {
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.exerciseName,
+            sets: ex.sets.filter(s => s.completed).map(s => ({ weight: s.weight, reps: s.reps }))
+          };
+        }
+      }).filter(ex => {
+        if (ex.type === 'superset') return ex.exercises.length > 0;
+        return ex.sets.length > 0;
+      }),
       totalDuration,
       notes: ''
     };
@@ -130,6 +203,7 @@ export default function Training() {
       setSelectedPlan(null);
       setTodayPlan(null);
       setTrainingExercises([]);
+      setTrainingMode('normal');
     });
   };
 
@@ -139,7 +213,73 @@ export default function Training() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const addExercise = () => {
+    if (trainingMode === 'superset') {
+      setTrainingExercises(prev => [...prev, {
+        type: 'superset',
+        exercises: [
+          {
+            exerciseId: '',
+            exerciseName: '',
+            targetSets: 4,
+            targetReps: 10,
+            targetWeight: 0,
+            sets: Array(4).fill(null).map(() => ({ weight: 0, reps: 0, completed: false }))
+          },
+          {
+            exerciseId: '',
+            exerciseName: '',
+            targetSets: 4,
+            targetReps: 10,
+            targetWeight: 0,
+            sets: Array(4).fill(null).map(() => ({ weight: 0, reps: 0, completed: false }))
+          }
+        ]
+      }]);
+    } else if (trainingMode === 'dropSet') {
+      setTrainingExercises(prev => [...prev, {
+        type: 'dropSet',
+        exerciseId: '',
+        exerciseName: '',
+        startingWeight: 0,
+        dropPercentage: 10,
+        sets: Array(3).fill(null).map((_, i) => ({ weight: 0, reps: 10, completed: false, setNumber: i + 1 }))
+      }]);
+    } else {
+      setTrainingExercises(prev => [...prev, {
+        exerciseId: '',
+        exerciseName: '',
+        targetSets: 4,
+        targetReps: 10,
+        targetWeight: 0,
+        sets: Array(4).fill(null).map(() => ({ weight: 0, reps: 0, completed: false }))
+      }]);
+    }
+  };
+
+  const updateDropSetWeight = (index, startingWeight, dropPercentage) => {
+    const sets = [];
+    let currentWeight = startingWeight;
+    for (let i = 0; i < 3; i++) {
+      sets.push({
+        weight: Math.round(currentWeight * 10) / 10,
+        reps: 10,
+        completed: false,
+        setNumber: i + 1
+      });
+      currentWeight *= (100 - dropPercentage) / 100;
+    }
+    setTrainingExercises(prev => prev.map((ex, i) => {
+      if (i === index) {
+        return { ...ex, startingWeight, dropPercentage, sets };
+      }
+      return ex;
+    }));
+  };
+
   const currentExercise = trainingExercises[currentExerciseIndex];
+  const currentSubExercise = currentExercise?.type === 'superset' ? currentExercise.exercises[currentSubIndex] : null;
+  const displayExercise = currentSubExercise || currentExercise;
 
   return (
     <div className="p-6 space-y-6">
@@ -147,13 +287,64 @@ export default function Training() {
 
       {mode === 'select' && (
         <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button
+              onClick={() => {
+                setTrainingMode('normal');
+                setSelectedPlan(null);
+                setTrainingExercises([]);
+                setMode('custom');
+              }}
+              className={`p-6 rounded-xl border-2 text-center transition ${
+                trainingMode === 'normal' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
+              }`}
+            >
+              <Dumbbell className="w-10 h-10 mx-auto mb-3 text-blue-600" />
+              <h3 className="font-semibold text-gray-800">普通组</h3>
+              <p className="text-sm text-gray-500 mt-1">标准训练模式</p>
+            </button>
+            <button
+              onClick={() => {
+                setTrainingMode('superset');
+                setSelectedPlan(null);
+                setTrainingExercises([]);
+                setMode('custom');
+              }}
+              className={`p-6 rounded-xl border-2 text-center transition ${
+                trainingMode === 'superset' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
+              }`}
+            >
+              <Zap className="w-10 h-10 mx-auto mb-3 text-purple-600" />
+              <h3 className="font-semibold text-gray-800">超级组</h3>
+              <p className="text-sm text-gray-500 mt-1">两个动作交替无休息</p>
+            </button>
+            <button
+              onClick={() => {
+                setTrainingMode('dropSet');
+                setSelectedPlan(null);
+                setTrainingExercises([]);
+                setMode('custom');
+              }}
+              className={`p-6 rounded-xl border-2 text-center transition ${
+                trainingMode === 'dropSet' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-300'
+              }`}
+            >
+              <TrendingDown className="w-10 h-10 mx-auto mb-3 text-orange-600" />
+              <h3 className="font-semibold text-gray-800">递减组</h3>
+              <p className="text-sm text-gray-500 mt-1">连续降低重量不休息</p>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl p-6 shadow-md">
               <h3 className="font-semibold text-gray-800 mb-4">选择今日计划</h3>
               {plans.map(plan => (
                 <button
                   key={plan._id}
-                  onClick={() => selectPlan(plan)}
+                  onClick={() => {
+                    setTrainingMode('normal');
+                    selectPlan(plan);
+                  }}
                   className={`w-full p-4 rounded-lg border-2 text-left transition ${
                     selectedPlan?._id === plan._id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
                   }`}
@@ -216,64 +407,232 @@ export default function Training() {
 
       {mode === 'custom' && (
         <div className="bg-white rounded-xl p-6 shadow-md">
-          <h3 className="font-semibold text-gray-800 mb-4">自由训练</h3>
+          <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            {trainingMode === 'superset' && <Zap className="w-5 h-5 text-purple-600" />}
+            {trainingMode === 'dropSet' && <TrendingDown className="w-5 h-5 text-orange-600" />}
+            {trainingMode === 'normal' && <Dumbbell className="w-5 h-5 text-blue-600" />}
+            {trainingMode === 'superset' ? '超级组训练' : trainingMode === 'dropSet' ? '递减组训练' : '自由训练'}
+          </h3>
           <div className="space-y-4">
             {trainingExercises.map((ex, exIndex) => (
-              <div key={exIndex} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                <select
-                  value={ex.exerciseId}
-                  onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
-                    i === exIndex ? { ...e, exerciseId: e.target.value, exerciseName: exercises.find(ex => ex._id === e.target.value)?.name } : e
-                  ))}
-                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg"
-                >
-                  <option value="">选择动作</option>
-                  {exercises.map(exercise => (
-                    <option key={exercise._id} value={exercise._id}>{exercise.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  value={ex.targetSets}
-                  onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
-                    i === exIndex ? { ...e, targetSets: parseInt(e.target.value) || 1, sets: Array(parseInt(e.target.value) || 1).fill(null).map(() => ({ weight: e.weight, reps: 0, completed: false })) } : e
-                  ))}
-                  className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
-                  placeholder="组"
-                />
-                <input
-                  type="number"
-                  value={ex.targetReps}
-                  onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
-                    i === exIndex ? { ...e, targetReps: parseInt(e.target.value) || 10 } : e
-                  ))}
-                  className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
-                  placeholder="次"
-                />
-                <input
-                  type="number"
-                  value={ex.targetWeight}
-                  onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
-                    i === exIndex ? { ...e, targetWeight: parseFloat(e.target.value) || 0 } : e
-                  ))}
-                  className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
-                  placeholder="kg"
-                />
+              <div key={exIndex} className="p-4 bg-gray-50 rounded-lg">
+                {ex.type === 'superset' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 py-2 bg-purple-100 rounded-lg">
+                      <Zap className="w-4 h-4 text-purple-600" />
+                      <span className="text-purple-700 font-medium">超级组 #{exIndex + 1}</span>
+                    </div>
+                    {ex.exercises.map((subEx, subIndex) => (
+                      <div key={subIndex} className="flex items-center gap-4">
+                        <select
+                          value={subEx.exerciseId}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            const name = exercises.find(ex => ex._id === value)?.name || '';
+                            setTrainingExercises(prev => prev.map((e, i) => {
+                              if (i === exIndex) {
+                                return {
+                                  ...e,
+                                  exercises: e.exercises.map((se, si) => {
+                                    if (si === subIndex) {
+                                      return { ...se, exerciseId: value, exerciseName: name };
+                                    }
+                                    return se;
+                                  })
+                                };
+                              }
+                              return e;
+                            }));
+                          }}
+                          className="flex-1 px-4 py-2 border border-gray-200 rounded-lg"
+                        >
+                          <option value="">选择动作 {subIndex + 1}</option>
+                          {exercises.map(exercise => (
+                            <option key={exercise._id} value={exercise._id}>{exercise.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          value={subEx.targetSets}
+                          onChange={(e) => {
+                            const sets = parseInt(e.target.value) || 4;
+                            setTrainingExercises(prev => prev.map((e, i) => {
+                              if (i === exIndex) {
+                                return {
+                                  ...e,
+                                  exercises: e.exercises.map((se, si) => {
+                                    if (si === subIndex) {
+                                      return { ...se, targetSets: sets, sets: Array(sets).fill(null).map(() => ({ weight: se.targetWeight, reps: 0, completed: false })) };
+                                    }
+                                    return se;
+                                  })
+                                };
+                              }
+                              return e;
+                            }));
+                          }}
+                          className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                          placeholder="组"
+                        />
+                        <input
+                          type="number"
+                          value={subEx.targetReps}
+                          onChange={(e) => {
+                            const reps = parseInt(e.target.value) || 10;
+                            setTrainingExercises(prev => prev.map((e, i) => {
+                              if (i === exIndex) {
+                                return {
+                                  ...e,
+                                  exercises: e.exercises.map((se, si) => {
+                                    if (si === subIndex) {
+                                      return { ...se, targetReps: reps };
+                                    }
+                                    return se;
+                                  })
+                                };
+                              }
+                              return e;
+                            }));
+                          }}
+                          className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                          placeholder="次"
+                        />
+                        <input
+                          type="number"
+                          value={subEx.targetWeight}
+                          onChange={(e) => {
+                            const weight = parseFloat(e.target.value) || 0;
+                            setTrainingExercises(prev => prev.map((e, i) => {
+                              if (i === exIndex) {
+                                return {
+                                  ...e,
+                                  exercises: e.exercises.map((se, si) => {
+                                    if (si === subIndex) {
+                                      return { ...se, targetWeight: weight, sets: se.sets.map(s => ({ ...s, weight })) };
+                                    }
+                                    return se;
+                                  })
+                                };
+                              }
+                              return e;
+                            }));
+                          }}
+                          className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                          placeholder="kg"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ex.type === 'dropSet' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 py-2 bg-orange-100 rounded-lg">
+                      <TrendingDown className="w-4 h-4 text-orange-600" />
+                      <span className="text-orange-700 font-medium">递减组 #{exIndex + 1}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <select
+                        value={ex.exerciseId}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const name = exercises.find(ex => ex._id === value)?.name || '';
+                          setTrainingExercises(prev => prev.map((e, i) => {
+                            if (i === exIndex) {
+                              return { ...e, exerciseId: value, exerciseName: name };
+                            }
+                            return e;
+                          }));
+                        }}
+                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg"
+                      >
+                        <option value="">选择动作</option>
+                        {exercises.map(exercise => (
+                          <option key={exercise._id} value={exercise._id}>{exercise.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        value={ex.startingWeight}
+                        onChange={(e) => {
+                          const weight = parseFloat(e.target.value) || 0;
+                          updateDropSetWeight(exIndex, weight, ex.dropPercentage);
+                        }}
+                        className="w-20 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                        placeholder="起始重量"
+                      />
+                      <input
+                        type="number"
+                        value={ex.dropPercentage}
+                        onChange={(e) => {
+                          const percent = parseInt(e.target.value) || 10;
+                          updateDropSetWeight(exIndex, ex.startingWeight, percent);
+                        }}
+                        className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                        placeholder="递减%"
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {ex.sets.map((set, setIndex) => (
+                        <div key={setIndex} className="bg-white p-3 rounded-lg text-center">
+                          <div className="text-sm text-gray-500">第 {set.setNumber} 组</div>
+                          <div className="text-lg font-bold text-orange-600">{set.weight}kg</div>
+                          <div className="text-sm text-gray-500">× {set.reps}次</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {!ex.type && (
+                  <div className="flex items-center gap-4">
+                    <select
+                      value={ex.exerciseId}
+                      onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
+                        i === exIndex ? { ...e, exerciseId: e.target.value, exerciseName: exercises.find(ex => ex._id === e.target.value)?.name } : e
+                      ))}
+                      className="flex-1 px-4 py-2 border border-gray-200 rounded-lg"
+                    >
+                      <option value="">选择动作</option>
+                      {exercises.map(exercise => (
+                        <option key={exercise._id} value={exercise._id}>{exercise.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      value={ex.targetSets}
+                      onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
+                        i === exIndex ? { ...e, targetSets: parseInt(e.target.value) || 1, sets: Array(parseInt(e.target.value) || 1).fill(null).map(() => ({ weight: e.weight, reps: 0, completed: false })) } : e
+                      ))}
+                      className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                      placeholder="组"
+                    />
+                    <input
+                      type="number"
+                      value={ex.targetReps}
+                      onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
+                        i === exIndex ? { ...e, targetReps: parseInt(e.target.value) || 10 } : e
+                      ))}
+                      className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                      placeholder="次"
+                    />
+                    <input
+                      type="number"
+                      value={ex.targetWeight}
+                      onChange={(e) => setTrainingExercises(prev => prev.map((e, i) =>
+                        i === exIndex ? { ...e, targetWeight: parseFloat(e.target.value) || 0 } : e
+                      ))}
+                      className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-center"
+                      placeholder="kg"
+                    />
+                  </div>
+                )}
               </div>
             ))}
             <button
-              onClick={() => setTrainingExercises(prev => [...prev, {
-                exerciseId: '',
-                exerciseName: '',
-                targetSets: 4,
-                targetReps: 10,
-                targetWeight: 0,
-                sets: Array(4).fill(null).map(() => ({ weight: 0, reps: 0, completed: false }))
-              }])}
+              onClick={addExercise}
               className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-500 hover:text-blue-500 transition flex items-center justify-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              添加动作
+              {trainingMode === 'superset' ? '添加超级组' : trainingMode === 'dropSet' ? '添加递减组' : '添加动作'}
             </button>
             <div className="flex gap-3">
               <button
@@ -298,7 +657,11 @@ export default function Training() {
         <div className="max-w-2xl mx-auto space-y-6">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl p-6 text-white">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold">训练中</h3>
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                训练中
+                {currentExercise?.type === 'superset' && <Zap className="w-5 h-5 text-yellow-300" />}
+                {currentExercise?.type === 'dropSet' && <TrendingDown className="w-5 h-5 text-orange-300" />}
+              </h3>
               <div className="flex items-center gap-2">
                 <Timer className="w-5 h-5" />
                 <span className="text-2xl font-bold">{formatTime(totalDuration)}</span>
@@ -307,7 +670,12 @@ export default function Training() {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-blue-200">当前动作</span>
-                <h4 className="text-xl font-semibold">{currentExercise?.exerciseName}</h4>
+                <h4 className="text-xl font-semibold">
+                  {currentExercise?.type === 'superset' 
+                    ? `${displayExercise?.exerciseName} (${currentSubIndex + 1}/${currentExercise.exercises.length})`
+                    : displayExercise?.exerciseName
+                  }
+                </h4>
               </div>
               <div className="text-right">
                 <span className="text-blue-200">进度</span>
@@ -325,9 +693,14 @@ export default function Training() {
           ) : (
             <div className="bg-white rounded-xl p-6 shadow-md">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-semibold text-gray-800">第 {currentSetIndex + 1} 组 / {currentExercise?.targetSets} 组</h3>
+                <h3 className="font-semibold text-gray-800">
+                  {currentExercise?.type === 'superset' 
+                    ? `超级组 - 第 ${currentSetIndex + 1} 组 / ${displayExercise?.sets.length} 组`
+                    : `第 ${currentSetIndex + 1} 组 / ${displayExercise?.sets.length} 组`
+                  }
+                </h3>
                 <div className="flex gap-2">
-                  {currentExercise?.sets.map((set, index) => (
+                  {displayExercise?.sets.map((set, index) => (
                     <div key={index} className={`w-8 h-8 rounded-full flex items-center justify-center ${
                       index < currentSetIndex ? 'bg-green-500 text-white' :
                       index === currentSetIndex ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'
@@ -342,7 +715,7 @@ export default function Training() {
                   <label className="block text-sm text-gray-600 mb-2">重量 (kg)</label>
                   <input
                     type="number"
-                    defaultValue={currentExercise?.targetWeight}
+                    defaultValue={displayExercise?.type === 'dropSet' ? displayExercise.sets[currentSetIndex]?.weight : displayExercise?.targetWeight}
                     className="w-full text-2xl font-bold text-center border-b-2 border-blue-500 pb-2 focus:outline-none"
                     ref={(el) => el?.focus()}
                     id="weight-input"
@@ -352,7 +725,7 @@ export default function Training() {
                   <label className="block text-sm text-gray-600 mb-2">次数</label>
                   <input
                     type="number"
-                    defaultValue={currentExercise?.targetReps}
+                    defaultValue={displayExercise?.targetReps}
                     className="w-full text-2xl font-bold text-center border-b-2 border-blue-500 pb-2 focus:outline-none"
                     id="reps-input"
                   />
@@ -379,7 +752,7 @@ export default function Training() {
                 </button>
               </div>
               <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
-                <span>目标: {currentExercise?.targetWeight}kg × {currentExercise?.targetReps}次</span>
+                <span>目标: {displayExercise?.type === 'dropSet' ? displayExercise.sets[currentSetIndex]?.weight : displayExercise?.targetWeight}kg × {displayExercise?.targetReps}次</span>
                 <div className="flex items-center gap-2">
                   <span>组间休息:</span>
                   <input
@@ -398,15 +771,50 @@ export default function Training() {
             <h4 className="font-medium text-gray-800 mb-3">训练列表</h4>
             <div className="space-y-2">
               {trainingExercises.map((ex, index) => {
-                const completedSets = ex.sets.filter(s => s.completed).length;
-                return (
-                  <div key={index} className={`flex items-center justify-between p-3 rounded-lg ${
-                    index === currentExerciseIndex ? 'bg-blue-50' : 'bg-gray-50'
-                  }`}>
-                    <span className="font-medium">{ex.exerciseName}</span>
-                    <span className="text-gray-600">{completedSets}/{ex.targetSets} 组</span>
-                  </div>
-                );
+                if (ex.type === 'superset') {
+                  const completedSets = ex.exercises.reduce((sum, se) => sum + se.sets.filter(s => s.completed).length, 0);
+                  const totalSets = ex.exercises.reduce((sum, se) => sum + se.sets.length, 0);
+                  return (
+                    <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${
+                      index === currentExerciseIndex ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50'
+                    }`}>
+                      <Zap className="w-5 h-5 text-purple-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-800">超级组</div>
+                        <div className="text-sm text-gray-500">
+                          {ex.exercises.map(se => se.exerciseName).join(' + ')}
+                        </div>
+                      </div>
+                      <span className="text-gray-600">{completedSets}/{totalSets} 组</span>
+                    </div>
+                  );
+                } else if (ex.type === 'dropSet') {
+                  const completedSets = ex.sets.filter(s => s.completed).length;
+                  return (
+                    <div key={index} className={`p-3 rounded-lg flex items-center gap-3 ${
+                      index === currentExerciseIndex ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'
+                    }`}>
+                      <TrendingDown className="w-5 h-5 text-orange-600" />
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-800">{ex.exerciseName}</div>
+                        <div className="text-sm text-gray-500">递减组 {ex.startingWeight}kg → -{ex.dropPercentage}%</div>
+                      </div>
+                      <span className="text-gray-600">{completedSets}/{ex.sets.length} 组</span>
+                    </div>
+                  );
+                } else {
+                  const completedSets = ex.sets.filter(s => s.completed).length;
+                  return (
+                    <div key={index} className={`p-3 rounded-lg ${
+                      index === currentExerciseIndex ? 'bg-blue-50' : 'bg-gray-50'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{ex.exerciseName}</span>
+                        <span className="text-gray-600">{completedSets}/{ex.sets.length} 组</span>
+                      </div>
+                    </div>
+                  );
+                }
               })}
             </div>
           </div>
@@ -423,18 +831,61 @@ export default function Training() {
           <div className="bg-white rounded-xl p-6 shadow-md">
             <h4 className="font-semibold text-gray-800 mb-4">训练详情</h4>
             <div className="space-y-3">
-              {trainingExercises.map((ex, index) => (
-                <div key={index} className="p-3 bg-gray-50 rounded-lg">
-                  <div className="font-medium text-gray-800 mb-2">{ex.exerciseName}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {ex.sets.map((set, setIndex) => set.completed && (
-                      <span key={setIndex} className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">
-                        {set.weight}kg × {set.reps}次
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {trainingExercises.map((ex, index) => {
+                if (ex.type === 'superset') {
+                  return (
+                    <div key={index} className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Zap className="w-5 h-5 text-purple-600" />
+                        <span className="font-medium text-gray-800">超级组</span>
+                      </div>
+                      <div className="space-y-2">
+                        {ex.exercises.map((subEx, subIndex) => (
+                          <div key={subIndex} className="bg-white p-3 rounded-lg">
+                            <div className="font-medium text-gray-800 mb-2">{subEx.exerciseName}</div>
+                            <div className="flex flex-wrap gap-2">
+                              {subEx.sets.map((set, setIndex) => set.completed && (
+                                <span key={setIndex} className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">
+                                  {set.weight}kg × {set.reps}次
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else if (ex.type === 'dropSet') {
+                  return (
+                    <div key={index} className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <TrendingDown className="w-5 h-5 text-orange-600" />
+                        <span className="font-medium text-gray-800">{ex.exerciseName} - 递减组</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {ex.sets.map((set, setIndex) => set.completed && (
+                          <span key={setIndex} className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">
+                            第{set.setNumber}组: {set.weight}kg × {set.reps}次
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                      <div className="font-medium text-gray-800 mb-2">{ex.exerciseName}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {ex.sets.map((set, setIndex) => set.completed && (
+                          <span key={setIndex} className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">
+                            {set.weight}kg × {set.reps}次
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+              })}
             </div>
           </div>
           <button
